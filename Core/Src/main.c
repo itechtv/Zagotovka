@@ -528,7 +528,7 @@ void StartWebServerTask(void *argument)
 	    mg_mgr_poll(&mgr, 0);
 	}
 
-	MG_INFO(("Initialising application..."));
+	MG_INFO(("Initialising application.."));
     web_init(&mgr);
 
 	MG_INFO(("Starting event loop"));
