@@ -25,10 +25,13 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "hal.h"
 #include "mongoose.h"
+#include "hal.h"
 #include "net.h"
 #include "db.h"
+#include "multi_button.h"
+#include "cJSON.h"
+#include "setings.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
