@@ -7,9 +7,9 @@
 
 ///
 static struct mg_connection *s_conn;              // Client connection
-static const char *s_url = "mqtt://192.168.11.11:1883";
-static const char *s_sub_topic = "test";     // Publish topic
-static const char *s_pub_topic = "test";  // Subscribe topic
+static const char *s_url = "mqtt://192.168.18.100:1883";
+static const char *s_sub_topic = "Zagotovka";     // Publish topic
+static const char *s_pub_topic = "Zagotovka";  // Subscribe topic
 static int s_qos = 0;
 // Authenticated user.
 // A user can be authenticated by:
@@ -34,7 +34,7 @@ static struct settings s_settings = {true, 1, 57, NULL};
 static const char *s_json_header =
     "Content-Type: application/json\r\n"
     "Cache-Control: no-cache\r\n";
-static uint64_t s_boot_timestamp = 0;  // Updated by SNTP
+uint64_t s_boot_timestamp = 0;  // Updated by SNTP
 
 // This is for newlib and TLS (mbedTLS)
 uint64_t mg_now(void) {

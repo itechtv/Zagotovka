@@ -178,16 +178,16 @@ void TIM6_DAC_IRQHandler(void)
 /**
   * @brief This function handles Ethernet global interrupt.
   */
-void xETH_IRQHandler(void)
-{
-  /* USER CODE BEGIN ETH_IRQn 0 */
-
-  /* USER CODE END ETH_IRQn 0 */
-  HAL_ETH_IRQHandler(&heth);
-  /* USER CODE BEGIN ETH_IRQn 1 */
-
-  /* USER CODE END ETH_IRQn 1 */
-}
+//void ETH_IRQHandler(void)
+//{
+//  /* USER CODE BEGIN ETH_IRQn 0 */
+//////
+//  /* USER CODE END ETH_IRQn 0 */
+//  HAL_ETH_IRQHandler(&heth);
+//  /* USER CODE BEGIN ETH_IRQn 1 */
+//////
+//  /* USER CODE END ETH_IRQn 1 */
+//}
 
 /**
   * @brief This function handles USB On The Go FS global interrupt.

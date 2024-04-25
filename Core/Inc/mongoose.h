@@ -950,7 +950,6 @@ void mg_pfn_stdout(char c, void *param);  // param: ignored
 
 
 
-
 enum { MG_LL_NONE, MG_LL_ERROR, MG_LL_INFO, MG_LL_DEBUG, MG_LL_VERBOSE };
 extern int mg_log_level;  // Current log level, one of MG_LL_*
 
@@ -981,8 +980,6 @@ void mg_log_set_fn(mg_pfn_t fn, void *param);
 #define MG_INFO(args) MG_LOG(MG_LL_INFO, args)
 #define MG_DEBUG(args) MG_LOG(MG_LL_DEBUG, args)
 #define MG_VERBOSE(args) MG_LOG(MG_LL_VERBOSE, args)
-
-
 
 
 struct mg_timer {

@@ -26,7 +26,6 @@
 
 /* USER CODE BEGIN Includes */
 #include "fatfs.h"
-#include "mongoose.h"
 /* USER CODE END Includes */
 
 /* USER CODE BEGIN PV */
@@ -102,29 +101,24 @@ static void USBH_UserProcess  (USBH_HandleTypeDef *phost, uint8_t id)
 
 	case HOST_USER_DISCONNECTION:
 		Appli_state = APPLICATION_DISCONNECT;
-		MG_INFO(("------APPLICATION_DISCONNECT-----!"));
-		//printf("------APPLICATION_DISCONNECT-----! \r\n");
+		printf("------APPLICATION_DISCONNECT-----! \r\n");
 		f_mount(NULL, (const TCHAR*) "", 1);
 
 		break;
 
 	case HOST_USER_CLASS_ACTIVE:
 		Appli_state = APPLICATION_READY;
-		MG_INFO(("------HOST_USER_CLASS_ACTIVE-----!"));
-		//printf("------HOST_USER_CLASS_ACTIVE-----! \r\n");
+		printf("------HOST_USER_CLASS_ACTIVE-----! \r\n");
 		break;
 
 	case HOST_USER_CONNECTION:
 		Appli_state = APPLICATION_START;
-		MG_INFO(("------HOST_USER_CONNECTION-------!"));
-		//printf("------HOST_USER_CONNECTION-------! \r\n");
+		printf("------HOST_USER_CONNECTION-------! \r\n");
 		osDelay(1000);
 		if (f_mount(&USBHFatFS, (const TCHAR*) USBHPath, 0) == FR_OK) {
-			//printf("f_mount OK  \r\n");
-			MG_INFO(("f_mount OK "));
+			printf("f_mount OK  \r\n");
 		} else {
-			//printf("f_mount ERROR!  \r\n");
-			MG_INFO(("f_mount OK "));
+			printf("f_mount ERROR!  \r\n");
 		}
 		break;
 
