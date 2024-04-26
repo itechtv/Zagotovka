@@ -178,7 +178,7 @@ void TIM6_DAC_IRQHandler(void)
 /**
   * @brief This function handles Ethernet global interrupt.
   */
-void xETH_IRQHandler(void)
+void bETH_IRQHandler(void)
 {
   /* USER CODE BEGIN ETH_IRQn 0 */
 

@@ -32,12 +32,25 @@
 #include "multi_button.h"
 #include "cJSON.h"
 #include "setings.h"
+#include "lwdtc.h" //
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 
+TIM_HandleTypeDef htim[NUMPIN];
 data_pin_t data_pin;
+
+struct Button button[NUMPIN];
+
+extern ApplicationTypeDef Appli_state;
+extern struct dbSettings SetSettings;
+extern struct dbCron dbCrontxt[MAXSIZE];
+extern struct dbPinsConf PinsConf[NUMPIN];
+extern struct dbPinsInfo PinsInfo[NUMPIN];
+extern struct dbPinToPin PinsLinks[NUMPINLINKS];
+
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -76,18 +89,18 @@ RNG_HandleTypeDef hrng;
 
 UART_HandleTypeDef huart3;
 
+/* Definitions for ConfigTask */
+osThreadId_t ConfigTaskHandle;
+const osThreadAttr_t ConfigTask_attributes = {
+  .name = "ConfigTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
 /* Definitions for WebServerTask */
 osThreadId_t WebServerTaskHandle;
 const osThreadAttr_t WebServerTask_attributes = {
   .name = "WebServerTask",
   .stack_size = 2048 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
-};
-/* Definitions for CronTask */
-osThreadId_t CronTaskHandle;
-const osThreadAttr_t CronTask_attributes = {
-  .name = "CronTask",
-  .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for OutputTask */
@@ -97,10 +110,10 @@ const osThreadAttr_t OutputTask_attributes = {
   .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
-/* Definitions for ConfigTask */
-osThreadId_t ConfigTaskHandle;
-const osThreadAttr_t ConfigTask_attributes = {
-  .name = "ConfigTask",
+/* Definitions for CronTask */
+osThreadId_t CronTaskHandle;
+const osThreadAttr_t CronTask_attributes = {
+  .name = "CronTask",
   .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
@@ -115,6 +128,13 @@ const osThreadAttr_t InputTask_attributes = {
 osThreadId_t OnewireTaskHandle;
 const osThreadAttr_t OnewireTask_attributes = {
   .name = "OnewireTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for EncoderTask */
+osThreadId_t EncoderTaskHandle;
+const osThreadAttr_t EncoderTask_attributes = {
+  .name = "EncoderTask",
   .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
@@ -138,12 +158,13 @@ static void MX_GPIO_Init(void);
 static void MX_ETH_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_RNG_Init(void);
-void StartWebServerTask(void *argument);
-void StartCronTask(void *argument);
-void StartOutputTask(void *argument);
 void StartConfigTask(void *argument);
+void StartWebServerTask(void *argument);
+void StartOutputTask(void *argument);
+void StartCronTask(void *argument);
 void StartInputTask(void *argument);
 void StartOnewireTask(void *argument);
+void StartEncoderTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -160,9 +181,19 @@ void mg_random(void *buf, size_t len) {  // Use on-board RNG
   }
 }
 
+static void timer_fn(void *arg) {
+  struct mg_tcpip_if *ifp = arg;                         // And show
+  const char *names[] = {"down", "up", "req", "ready"};  // network stats
+  MG_INFO(("Ethernet: %s, IP: %M, rx:%u, tx:%u, dr:%u, er:%u",
+           names[ifp->state], mg_print_ip4, &ifp->ip, ifp->nrecv, ifp->nsent,
+           ifp->ndrop, ifp->nerr));
+}
+
 uint64_t mg_millis(void) {
   return HAL_GetTick();
 }
+
+
 /* USER CODE END 0 */
 
 /**
@@ -197,7 +228,7 @@ int main(void)
   MX_ETH_Init();
   MX_USART3_UART_Init();
   MX_RNG_Init();
-  MX_FATFS_Init();
+
   /* USER CODE BEGIN 2 */
   test_init();
   /* USER CODE END 2 */
@@ -229,23 +260,26 @@ int main(void)
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
+  /* creation of ConfigTask */
+  ConfigTaskHandle = osThreadNew(StartConfigTask, NULL, &ConfigTask_attributes);
+
   /* creation of WebServerTask */
   WebServerTaskHandle = osThreadNew(StartWebServerTask, NULL, &WebServerTask_attributes);
-
-  /* creation of CronTask */
-  CronTaskHandle = osThreadNew(StartCronTask, NULL, &CronTask_attributes);
 
   /* creation of OutputTask */
   OutputTaskHandle = osThreadNew(StartOutputTask, NULL, &OutputTask_attributes);
 
-  /* creation of ConfigTask */
-  ConfigTaskHandle = osThreadNew(StartConfigTask, NULL, &ConfigTask_attributes);
+  /* creation of CronTask */
+  CronTaskHandle = osThreadNew(StartCronTask, NULL, &CronTask_attributes);
 
   /* creation of InputTask */
   InputTaskHandle = osThreadNew(StartInputTask, NULL, &InputTask_attributes);
 
   /* creation of OnewireTask */
   OnewireTaskHandle = osThreadNew(StartOnewireTask, NULL, &OnewireTask_attributes);
+
+  /* creation of EncoderTask */
+  EncoderTaskHandle = osThreadNew(StartEncoderTask, NULL, &EncoderTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -497,6 +531,92 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE END 4 */
 
+/* USER CODE BEGIN Header_StartConfigTask */
+/**
+* @brief Function implementing the ConfigTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartConfigTask */
+void StartConfigTask(void *argument)
+{
+  /* USER CODE BEGIN StartConfigTask */
+  /* init code for USB_HOST */
+  int usbflag = 1;
+  uint16_t usbnum = 0;
+  FILINFO finfo;
+
+  MX_FATFS_Init();
+  MX_USB_HOST_Init();
+  /* Infinite loop */
+  for(;;)
+  {
+		switch (Appli_state) {
+		case APPLICATION_READY:
+			if (usbflag == 1) {
+				osDelay(1000);
+				printf("APPLICATION_READY! \r\n");
+
+				FRESULT fresult = f_stat("setings.ini", &finfo);
+				if (fresult == FR_OK) {
+					GetSetingsConfig();
+					GetCronConfig();
+					GetPinConfig();
+					GetPinToPin();
+
+					InitPin();
+
+					xTaskNotifyGive(WebServerTaskHandle); // ТО ВКЛЮЧАЕМ ЗАДАЧУ WebServerTask
+					xTaskNotifyGive(CronTaskHandle); // И ВКЛЮЧАЕМ ЗАДАЧУ CronTask
+					xTaskNotifyGive(OutputTaskHandle); // И ВКЛЮЧАЕМ ЗАДАЧУ OutputTask
+					xTaskNotifyGive(InputTaskHandle); // И ВКЛЮЧАЕМ ЗАДАЧУ InputTask
+					xTaskNotifyGive(EncoderTaskHandle); // И ВКЛЮЧАЕМ ЗАДАЧУ PWMTask
+
+				} else {
+					StartSetingsConfig();
+
+					xTaskNotifyGive(WebServerTaskHandle); // ТО ВКЛЮЧАЕМ ЗАДАЧУ WebServerTask
+					xTaskNotifyGive(CronTaskHandle); // И ВКЛЮЧАЕМ ЗАДАЧУ CronTask
+					xTaskNotifyGive(OutputTaskHandle); // И ВКЛЮЧАЕМ ЗАДАЧУ OutputTask
+					xTaskNotifyGive(InputTaskHandle); // И ВКЛЮЧАЕМ ЗАДАЧУ InputTask
+					xTaskNotifyGive(EncoderTaskHandle); // И ВКЛЮЧАЕМ ЗАДАЧУ PWMTask
+				}
+				usbflag = 0;
+			}
+			/******************************************************************************************/
+			// Функция для чтения целых чисел из очереди
+			if (xQueueReceive(usbQueueHandle, &usbnum, portMAX_DELAY) == pdTRUE) {
+				switch (usbnum) {
+				case 1:
+					SetPinConfig();
+					break;
+				case 2:
+					SetSetingsConfig();
+					break;
+				case 3:
+					SetCronConfig();
+					break;
+				case 4:
+					SetPinToPin();
+					break;
+				default:
+					//printf("Wrong data! \r\n");
+					break;
+				}
+				printf("+++ Received number: %u\n", usbnum);
+			}
+			/******************************************************************************************/
+
+			break;
+		default:
+			//printf("Wrong data! \r\n");
+			break;
+		}
+    osDelay(1);
+  }
+  /* USER CODE END StartConfigTask */
+}
+
 /* USER CODE BEGIN Header_StartWebServerTask */
 /**
   * @brief  Function implementing the WebServerTask thread.
@@ -506,9 +626,10 @@ static void MX_GPIO_Init(void)
 /* USER CODE END Header_StartWebServerTask */
 void StartWebServerTask(void *argument)
 {
-  /* init code for USB_HOST */
-  MX_USB_HOST_Init();
-  /* USER CODE BEGIN 5 */
+  /* USER CODE BEGIN StartWebServerTask */
+	ulTaskNotifyTake(0, portMAX_DELAY);
+  /* Infinite loop */
+	//ulTaskNotifyTake(0, portMAX_DELAY);
   /* Infinite loop */
 	struct mg_mgr mgr;        // Initialise Mongoose event manager
 	mg_mgr_init(&mgr);        // and attach it to the interface
@@ -518,13 +639,14 @@ void StartWebServerTask(void *argument)
 	struct mg_tcpip_driver_stm32f_data driver_data = {.mdc_cr = 4};
     struct mg_tcpip_if mif = {.mac = GENERATE_LOCALLY_ADMINISTERED_MAC(),
                             // Uncomment below for static configuration:
-                            // .ip = mg_htonl(MG_U32(192, 168, 0, 223)),
-                            // .mask = mg_htonl(MG_U32(255, 255, 255, 0)),
-                            // .gw = mg_htonl(MG_U32(192, 168, 0, 1)),
+                             //.ip = mg_htonl(MG_U32(192, 168, 11, 80)),
+                             //.mask = mg_htonl(MG_U32(255, 255, 255, 0)),
+                             //.gw = mg_htonl(MG_U32(192, 168, 11, 1)),
 	                          .driver = &mg_tcpip_driver_stm32f,
 	                          .driver_data = &driver_data};
 	mg_tcpip_init(&mgr, &mif);
-	//mg_timer_add(&mgr, BLINK_PERIOD_MS, MG_TIMER_REPEAT, timer_fn, &mif);
+
+	//mg_timer_add(&mgr, 1000, MG_TIMER_REPEAT, timer_fn, &mif);
 
 	MG_INFO(("MAC: %M. Waiting for IP...", mg_print_mac, mif.mac));
 	while (mif.state != MG_TCPIP_STATE_READY) {
@@ -537,25 +659,8 @@ void StartWebServerTask(void *argument)
 	MG_INFO(("Starting event loop"));
 	for (;;) mg_mgr_poll(&mgr, 1);  // Infinite event loop
 	(void) argument;
-  /* USER CODE END 5 */
-}
 
-/* USER CODE BEGIN Header_StartCronTask */
-/**
-* @brief Function implementing the CronTask thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_StartCronTask */
-void StartCronTask(void *argument)
-{
-  /* USER CODE BEGIN StartCronTask */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
-  /* USER CODE END StartCronTask */
+  /* USER CODE END StartWebServerTask */
 }
 
 /* USER CODE BEGIN Header_StartOutputTask */
@@ -568,6 +673,7 @@ void StartCronTask(void *argument)
 void StartOutputTask(void *argument)
 {
   /* USER CODE BEGIN StartOutputTask */
+	ulTaskNotifyTake(0, portMAX_DELAY);
   /* Infinite loop */
   for(;;)
   {
@@ -576,22 +682,24 @@ void StartOutputTask(void *argument)
   /* USER CODE END StartOutputTask */
 }
 
-/* USER CODE BEGIN Header_StartConfigTask */
+/* USER CODE BEGIN Header_StartCronTask */
 /**
-* @brief Function implementing the ConfigTask thread.
+* @brief Function implementing the CronTask thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_StartConfigTask */
-void StartConfigTask(void *argument)
+/* USER CODE END Header_StartCronTask */
+void StartCronTask(void *argument)
 {
-  /* USER CODE BEGIN StartConfigTask */
+  /* USER CODE BEGIN StartCronTask */
+	ulTaskNotifyTake(0, portMAX_DELAY);
+
   /* Infinite loop */
   for(;;)
   {
     osDelay(1);
   }
-  /* USER CODE END StartConfigTask */
+  /* USER CODE END StartCronTask */
 }
 
 /* USER CODE BEGIN Header_StartInputTask */
@@ -604,6 +712,7 @@ void StartConfigTask(void *argument)
 void StartInputTask(void *argument)
 {
   /* USER CODE BEGIN StartInputTask */
+	ulTaskNotifyTake(0, portMAX_DELAY);
   /* Infinite loop */
   for(;;)
   {
@@ -622,12 +731,32 @@ void StartInputTask(void *argument)
 void StartOnewireTask(void *argument)
 {
   /* USER CODE BEGIN StartOnewireTask */
+  ulTaskNotifyTake(0, portMAX_DELAY);
   /* Infinite loop */
   for(;;)
   {
     osDelay(1);
   }
   /* USER CODE END StartOnewireTask */
+}
+
+/* USER CODE BEGIN Header_StartEncoderTask */
+/**
+* @brief Function implementing the EncoderTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartEncoderTask */
+void StartEncoderTask(void *argument)
+{
+  /* USER CODE BEGIN StartEncoderTask */
+  ulTaskNotifyTake(0, portMAX_DELAY);
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END StartEncoderTask */
 }
 
 /**
