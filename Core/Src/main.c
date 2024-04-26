@@ -37,6 +37,13 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+// CRON variable
+struct tm *timez;
+time_t cronetime;
+time_t cronetime_old;
+
+// SNTP variable
+extern uint64_t s_boot_timestamp;
 
 TIM_HandleTypeDef htim[NUMPIN];
 data_pin_t data_pin;
@@ -529,6 +536,63 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+// int pause  0 - до паузы 1 - после паузы
+void parse_string(char *str, time_t cronetime_olds, int i, int pause) {
+	char *token;
+	char *saveptr;
+	int flag = 0;
+	int k = 0;
+	int pin = 0;
+	char delim[] = ";";
+
+	// Разбиваем строку на элементы, разделенные точкой с запятой
+	token = strtok_r(str, delim, &saveptr);
+	while (token != NULL) {
+		char *end_token;
+		// Если нашли элемент "p", устанавливаем флаг
+
+		if (token[0] == 'p') {
+			char *newstring = token + 1;
+			//printf("Pause %d seconds\n", atoi(newstring));
+			dbCrontxt[i].ptime = cronetime_olds + atoi(newstring);
+			flag = 1;
+		}
+		// в зависимости от флага отправляем в очередь до или после паузы
+		if (flag == pause) {
+			//printf("%s\n", token);
+
+			//strcpy(data_pin.message, pch);
+
+			char *token2 = strtok_r(token, ":", &end_token);
+			//printf("pin = %d\n", atoi(token2));
+
+			while (token2 != NULL) {
+				// тут отправляем в очередь
+				if (k == 0) {
+					pin = atoi(token2);
+					if(pin != 0){
+						data_pin.pin = pin-1;
+					}
+					//printf("pin = %s\n", token2);
+				}
+				if (k == 1) {
+					data_pin.action = atoi(token2);
+					//printf("action = %s\n", token2);
+				}
+
+				token2 = strtok_r(NULL, ":", &end_token);
+				k++;
+				// printf("action = %d\n", atoi(token2));
+			}
+
+			if(k == 2) {
+				xQueueSend(myQueueHandle, (void* ) &data_pin, 0);
+			}
+			k = 0;
+		}
+		token = strtok_r(NULL, delim, &saveptr);
+	}
+}
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartConfigTask */
@@ -677,6 +741,23 @@ void StartOutputTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
+		if (xQueueReceive(myQueueHandle, &data_pin, portMAX_DELAY) == pdTRUE) {
+			if (data_pin.action == 0) {
+				//@todo  проверить что data_pin.pin число
+				HAL_GPIO_WritePin(PinsInfo[data_pin.pin].gpio_name, PinsInfo[data_pin.pin].hal_pin, GPIO_PIN_RESET);
+				//printf("%d-%d  \r\n", (int) data_pin.pin, (int) data_pin.action);
+			}
+			if (data_pin.action == 1) {
+				//@todo  проверить что data_pin.pin число
+				HAL_GPIO_WritePin(PinsInfo[data_pin.pin].gpio_name, PinsInfo[data_pin.pin].hal_pin, GPIO_PIN_SET);
+				//printf("%d-%d  \r\n", (int) data_pin.pin, (int) data_pin.action);
+			}
+			if (data_pin.action == 2) {
+				//@todo  проверить что data_pin.pin число
+				HAL_GPIO_TogglePin(PinsInfo[data_pin.pin].gpio_name, PinsInfo[data_pin.pin].hal_pin);
+				//printf("%d-%d  \r\n", (int) data_pin.pin, (int) data_pin.action);
+			}
+		}
     osDelay(1);
   }
   /* USER CODE END StartOutputTask */
@@ -694,9 +775,61 @@ void StartCronTask(void *argument)
   /* USER CODE BEGIN StartCronTask */
 	ulTaskNotifyTake(0, portMAX_DELAY);
 
+	static lwdtc_cron_ctx_t cron_ctxs[MAXSIZE];
+	int i = 0;
+	char str[40] = { 0 };
+
+	/* Define context for CRON, used to parse data to */
+	size_t fail_index;
+	printf("Count task %d\r\n", LWDTC_ARRAYSIZE(dbCrontxt));
+	/* Parse all cron strings */
+	if (lwdtc_cron_parse_multi(cron_ctxs, dbCrontxt, MAXSIZE, &fail_index)
+			!= lwdtcOK) {
+		printf("Failed to parse cron at index %d\r\n", (int) fail_index);
+	}
+	printf("CRONs parsed and ready to go\r\n");
+
   /* Infinite loop */
   for(;;)
   {
+
+	if(s_boot_timestamp != 0){
+		//MG_INFO(("TIME: %lld ms ", s_boot_timestamp));
+		cronetime = (time_t) (s_boot_timestamp / 1000) + (mg_millis() / 1000);
+		if (cronetime != cronetime_old) {
+			cronetime_old = cronetime;
+			timez = localtime(&cronetime);
+			i = 0;
+
+			while (i < LWDTC_ARRAYSIZE(dbCrontxt)) {
+				if (cronetime >= dbCrontxt[i].ptime
+						&& dbCrontxt[i].ptime != 0) {
+
+					strcpy(str, dbCrontxt[i].activ);
+					parse_string(str, cronetime_old, i, 1);
+					dbCrontxt[i].ptime = 0;
+				}
+				i++;
+			}
+			i = 0;
+
+			/* Check if CRON should execute */
+			while (i < LWDTC_ARRAYSIZE(cron_ctxs)) {
+				if (lwdtc_cron_is_valid_for_time(timez, cron_ctxs, &i)
+						== lwdtcOK) {
+
+					strcpy(str, dbCrontxt[i].activ);
+					parse_string(str, cronetime_old, i, 0);
+					//xQueueSend(myQueueHandle, &i, 0);
+				}
+				i++;
+			}
+
+		}
+
+		//MG_INFO(("TIME s: %lld s ", cronetime));
+	}
+
     osDelay(1);
   }
   /* USER CODE END StartCronTask */

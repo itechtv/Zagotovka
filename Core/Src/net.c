@@ -34,7 +34,7 @@ static struct settings s_settings = {true, 1, 57, NULL};
 static const char *s_json_header =
     "Content-Type: application/json\r\n"
     "Cache-Control: no-cache\r\n";
-static uint64_t s_boot_timestamp = 0;  // Updated by SNTP
+uint64_t s_boot_timestamp = 0;  // Updated by SNTP
 
 // This is for newlib and TLS (mbedTLS)
 uint64_t mg_now(void) {
@@ -388,6 +388,6 @@ void web_init(struct mg_mgr *mgr) {
   s_settings.device_name = strdup("My Device");
   mg_http_listen(mgr, HTTP_URL, fn, NULL);
   mg_http_listen(mgr, HTTPS_URL, fn, (void *) 1);
-  mg_timer_add(mgr, 10 * 1000, MG_TIMER_RUN_NOW | MG_TIMER_REPEAT, timer_sntp_fn, mgr);
+  mg_timer_add(mgr, 3600 * 1000, MG_TIMER_RUN_NOW | MG_TIMER_REPEAT, timer_sntp_fn, mgr);
   mg_timer_add(mgr, 1000, MG_TIMER_REPEAT | MG_TIMER_RUN_NOW, timer_fn_mqtt, mgr);
 }
